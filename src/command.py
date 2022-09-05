@@ -19,6 +19,107 @@ import re
 from random import randrange
 import shutil
 import time
+import shlex
+from operator import itemgetter
+
+#%%
+def parse_cigar(cigar,alignment_start,coordinates):
+    alpha_pos = [m.start() for m in re.finditer("[A-Z]+", cigar)]
+    x=0
+    positions = []
+    mtypes = []
+    for i in range(0,len(alpha_pos)):
+        y = alpha_pos[i]
+        bases = cigar[x:y]
+        mtype = cigar[y]
+        positions.append(bases)
+        mtypes.append(mtype)
+        x = y+1
+    deletions = []
+    for x,y in zip(positions,mtypes):
+        x = int(x)
+        if y != 'D':
+            alignment_start+=x
+            continue
+        else:
+            if coordinates[0] <= alignment_start <= coordinates[1]:
+                d_s = alignment_start+1
+                d_e = d_s+x-1
+                d_len = x
+                deletion = (d_s, d_e, d_len)
+                deletions.append(deletion)
+                alignment_start+=x
+            else:
+                alignment_start+=x
+                continue
+    return(deletions)
+
+#%%
+def cigar_gaps(record, index, reference, outfile, tempdir, coordinates, deletion_of_interest, parse_gisaid):
+    fname = tempdir+'/tmp'+str(index)
+    record.seq = record.seq.ungap()
+    fixed_name = record.description.replace(" ","_")
+    record.id = fixed_name
+    record.name = fixed_name
+    with open(fname+'.fasta', "w") as output_handle:
+        SeqIO.write(record, output_handle, "fasta")
+    cmd = '{0} -c -x asm5 --sam-hit-only --secondary=no --end-bonus 500 -t 1 {1} {2} -o {3}'.format('/home/cfos/miniconda3/bin/minimap2', reference, fname+'.fasta',fname+'.paf')
+    c = subprocess.check_output(shlex.split(cmd), shell=False,stderr=subprocess.PIPE)
+    with open(fname+'.paf','r') as f:
+        paf = f.read().strip().split("\t")
+        wanted = itemgetter(7,22)(paf)
+        cigar = re.sub('^.*:','',wanted[1])
+        alignment_start = int(wanted[0])
+        gaps = parse_cigar(cigar,alignment_start,coordinates)
+
+        number_of_gaps = len(gaps)
+
+        if number_of_gaps == 0:
+            result = 'None'
+        else:
+            result = '; '.join(map(str, gaps))
+    
+        if deletion_of_interest is not None:
+            if deletion_of_interest in gaps and number_of_gaps == 1:
+                status = 'target_deletion'
+            elif deletion_of_interest in gaps and number_of_gaps == 1 > 1:
+                status = 'target_deletion_plus'
+            elif deletion_of_interest not in gaps and number_of_gaps >= 1:
+                status = 'deletion'
+            else:
+                status = 'no_deletion'
+        else:
+            if number_of_gaps == 0:
+                status = 'no_deletion'
+            elif number_of_gaps > 1:
+                status = 'deletion_plus'
+            else:
+                status = 'deletion'
+
+        # generate output result
+        status_code = 0
+        result_string = f'{record.id}\t{result}\t{number_of_gaps}\t{status}'
+        if parse_gisaid == True:      
+            try:
+                # fix record name
+                DOC = [x for x in fixed_name.split("|") if x.startswith("hCoV")==False and x.startswith("EPI")==False][0]
+                country = [x for x in fixed_name.split("|") if x.startswith("hCoV")][0].split("/")[1]
+                id = [x for x in fixed_name.split("|") if x.startswith("hCoV")][0].split("/")[2]
+                result_string = result_string+f'\t{id}\t{country}\t{DOC}'
+            except:
+                DOC = 'unknown'
+                country = 'unknown'
+                id = 'unknown'
+                result_string = result_string+f'\t{id}\t{country}\t{DOC}'
+                status_code += 1
+        final_result = result_string+'\n'
+
+        with open(outfile, "a") as output_handle:
+            output_handle.write(final_result)
+        
+        os.system('rm {0} {1}'.format(fname+'.fasta',fname+'.paf'))
+        return(status_code)
+
 
 #%%
 def all_gaps(record, index, reference, outfile, tempdir, coordinates, deletion_of_interest, parse_gisaid):
@@ -181,6 +282,7 @@ def main(sysargs = sys.argv[1:]):
     parser.add_argument('-r','--reference', required=False, help="Reference genome in fasta format", default = os.path.join(os.getcwd(),"MN908947.3.fasta"))
     parser.add_argument('-t','--threads', required=False, action="store", default=os.cpu_count(), help='Number of threads to use in parallel processing. Defaults to all available threads.')
     parser.add_argument('-o','--outfile', required=False, action="store", default='deletion_results.tsv', help='Name of the outfile to store results')
+    parser.add_argument("--quick", action="store_true", required=False, default=False, help="Run in 'quick' mode: faster than default mode, but less rich output")
     parser.add_argument("--version",action="version", version=f"v{__version__}")
     args=parser.parse_args()
 
@@ -258,12 +360,14 @@ Additionally, the following python libraries must be installed:
         os.remove(outfile)
     
     #set up header for outfile
-    header = 'full_seq_name\tgap_stretches\tnumber_of_deletions\tsummary\tgap_perc\tn_perc\tQC'
-    if len(coordinates)>0:
-        header = header + "\taa_stop_position\tprot_perc\tprot_truncated"
-    if args.parse_gisaid:
-        header = header + "\tshort_seq_id\tcountry\tdate_of_collection"
-    header = header+"\n"
+    if args.quick:
+        header = 'full_seq_name\tgap_stretches\tnumber_of_deletions\tsummary\n'
+    else:
+        if len(coordinates)>0:
+            header = header + "\taa_stop_position\tprot_perc\tprot_truncated"
+        if args.parse_gisaid:
+            header = header + "\tshort_seq_id\tcountry\tdate_of_collection"
+        header = header+"\n"
 
     with open(outfile, "a") as output_handle:
         output_handle.write(header)
@@ -272,12 +376,20 @@ Additionally, the following python libraries must be installed:
     os.makedirs(tempdir)
 
     start_time = time.perf_counter ()
-    printc("\nSearching {} for deletions using parallel processing.\nBe patient - might take a while for large files.\nEven if the progress bar pauses, don't panic.\n".format(''.join(args.fasta)), 'blue')
-    with open(MSA) as fd, mp.Pool(mp.cpu_count()) as pool:
-        result = pool.starmap(
-            all_gaps,
-            tqdm.tqdm([(record, index, reference, outfile, tempdir, coordinates, deletion_of_interest, args.parse_gisaid) for index, record in enumerate(SeqIO.parse(fd, "fasta"))]))    
-    os.rmdir(tempdir)
+    if args.quick:
+        printc("\nSearching {} for deletions using parallel processing in \033[1;33mquick\033[0m mode.\nBe patient - might take a while for large files.\nEven if the progress bar pauses, don't panic.\n".format(''.join(args.fasta)), 'blue')
+        with open(MSA) as fd, mp.Pool(mp.cpu_count()) as pool:
+            result = pool.starmap(
+                cigar_gaps,
+                tqdm.tqdm([(record, index, reference, outfile, tempdir, coordinates, deletion_of_interest, args.parse_gisaid) for index, record in enumerate(SeqIO.parse(fd, "fasta"))]))    
+        os.rmdir(tempdir)    
+    else:
+        printc("\nSearching {} for deletions using parallel processing in \033[1;33mrich\033[0m mode.\nBe patient - might take a while for large files.\nEven if the progress bar pauses, don't panic.\n".format(''.join(args.fasta)), 'blue')
+        with open(MSA) as fd, mp.Pool(mp.cpu_count()) as pool:
+            result = pool.starmap(
+                all_gaps,
+                tqdm.tqdm([(record, index, reference, outfile, tempdir, coordinates, deletion_of_interest, args.parse_gisaid) for index, record in enumerate(SeqIO.parse(fd, "fasta"))]))    
+        os.rmdir(tempdir)
     
     printc("\nResults in: {}".format(outfile), 'blue')
     end_time = time.perf_counter ()

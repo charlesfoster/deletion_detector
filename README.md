@@ -41,47 +41,36 @@ deletion_detector -h
 Output:
 
 ```
-usage: deletion_detector [-h] [-c COORDINATES] [-d DELETION_OF_INTEREST] [-f]
-                         [-p] [-r REFERENCE] [-t THREADS] [-o OUTFILE]
+usage: deletion_detector [-h] [-c COORDINATES] [-d DELETION_OF_INTEREST] [-f] [-p] [-r REFERENCE] [-t THREADS] [-o OUTFILE] [--quick]
+                         [--version]
                          [fasta ...]
 
 positional arguments:
-  fasta                 Fasta file containing sequences to check (default:
-                        None)
+  fasta                 Fasta file containing sequences to check (default: None)
 
 options:
   -h, --help            show this help message and exit
   -c COORDINATES, --coordinates COORDINATES
-                        Survey subset of genome, e.g. an open reading frame.
-                        Must be specified in the form of start:end (1-based
-                        coordinates; inclusive). If specified, stats will be
-                        given for protein truncation etc. Currently assumes 
-                        standard translation table. (default: False)
+                        Survey subset of genome, e.g. an open reading frame. Must be specified in the form of start:end (1-based
+                        coordinates; inclusive). If specified, stats will be given for protein truncation etc. Currently assumes standard
+                        translation table. (default: False)
   -d DELETION_OF_INTEREST, --deletion_of_interest DELETION_OF_INTEREST
-                        Specify a deletion of interest in the form of
-                        'start:end' (1-based coordinates; inclusive). If
-                        specified, outfile can be easily filtered to find
-                        'target_deletion'. (default: None)
+                        Specify a deletion of interest in the form of 'start:end' (1-based coordinates; inclusive). If specified, outfile
+                        can be easily filtered to find 'target_deletion'. (default: None)
   -f, --force           Force overwrite outfile (default: False)
-  -p, --parse_gisaid    If analysing fasta files from GISAID, parse out the
-                        date of collection and country (default: False)
+  -p, --parse_gisaid    If analysing fasta files from GISAID, parse out the date of collection and country (default: False)
   -r REFERENCE, --reference REFERENCE
-                        Reference genome in fasta format (default: /home/cfos/
-                        Programs/deletion_detector/MN908947.3.fasta)
+                        Reference genome in fasta format (default: /home/cfos/Programs/deletion_detector/MN908947.3.fasta)
   -t THREADS, --threads THREADS
-                        Number of threads to use in parallel processing.
-                        Defaults to all available threads. (default: 20)
+                        Number of threads to use in parallel processing. Defaults to all available threads. (default: 20)
   -o OUTFILE, --outfile OUTFILE
-                        Name of the outfile to store results (default:
-                        deletion_results.tsv)
+                        Name of the outfile to store results (default: deletion_results.tsv)
+  --quick               Run in 'quick' mode: faster than default mode, but less rich output (default: False)
+  --version             show program's version number and exit
 
-Analysis quits without running if outfile already exists and --force not
-specified. Limitations: (a) gap detection is always subject to how
-easy/difficult a region is to align to the reference genome, (b) if there are
-large deletions close to the beginning/end of a sequence, soft clipping of the
-alignment might introduce false missing data (padded as 'N's prior to deletion
-analysis).
-
+Analysis quits without running if outfile already exists and --force not specified. Limitations: (a) gap detection is always subject to how
+easy/difficult a region is to align to the reference genome, (b) if there are large deletions close to the beginning/end of a sequence, soft
+clipping of the alignment might introduce false missing data (padded as 'N's prior to deletion analysis).
 ```
 
 ## What does the program do?
@@ -90,7 +79,15 @@ Let's say you have a fasta-format file with one or more sequences that you wish 
 Note: the input sequences do NOT need to be aligned: `deletion_detector` assumes they aren't aligned, and aligns them as part of the analysis. At a future stage I might implement an option to skip alignment (for pre-aligned sequences).
 
 ## Benchmark
-All sequences within the provided file are compared to the specified reference sequence using parallel computation (tested on Ubuntu 22.04 and Mac OS), running in chunks so as to (hopefully) not exhaust all RAM. This method allows very large input files to be processed, but will vary from computer to computer based on your setup. If you receive out of memory errors, you probably need to split your input fasta into smaller files - judge based on your available RAM. As a guide, with my 10-core (20-thread) processor (Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz) and 64 GB RAM, I can process a 10.7 GB file with 351,995 sequences in ~582 seconds (just over nine and a half minutes), equating to an average of 867.53 iterations (sequences) per second.
+All sequences within the provided file are compared to the specified reference sequence using parallel computation (tested on Ubuntu 22.04 and Mac OS), running in chunks so as to (hopefully) not exhaust all RAM. This method allows very large input files to be processed, but will vary from computer to computer based on your setup. If you receive out of memory errors, you probably need to split your input fasta into smaller files - judge based on your available RAM. 
+
+There are two 'modes' to the program:
+- "Rich" mode: outfile has the deletion results and various QC metrics (see ["What do you get?"](#What-do-you-get) below)
+- "Quick" mode: outfile has the deletion results, but no extra QC metrics
+
+As a guide, with my 10-core (20-thread) processor (Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz) and 64 GB RAM, I can process a 10.7 GB file with 351,995 sequences in:
+- "Rich" mode: ~582 seconds (just over nine and a half minutes), equating to an average of 867.53 iterations (sequences) per second
+- "Quick" mode: ~399 seconds (just over six and a half minutes), equating to an average of 1289.65 iterations (sequences) per second
 
 ## What do you need to run the program?
 At minimum:
@@ -98,7 +95,7 @@ At minimum:
 * <reference>.fasta: a fasta-format file with one reference sequence for comparison (assumes SARS-CoV-2 reference genome by default)
 
 ## What do you get?
-The output file (in .tsv format) contains statistics about the deletions in query sequences, and basic QC metrics. The main output columns, in order, contain:
+Assuming you are running in "rich" mode (default), the output file (in .tsv format) contains statistics about the deletions in query sequences, and basic QC metrics. The main output columns, in order, contain:
 
 * The full query sequence ID
 * The stretches of gap(s) identified in a query sequence, in the form of '(start coordinate, end coordinate, number of consecutive gap sites)'
@@ -107,6 +104,8 @@ The output file (in .tsv format) contains statistics about the deletions in quer
 * Percentage of gaps (-) in the sequence
 * Percentage of Ns in the sequence
 * Overall QC based on the percentage of Ns: 'NO_N', 'LOW_N', 'MILD_N', 'MEDIUM_N', 'HIGH_N', 'FAIL'
+
+If running in "quick" mode, you will have no QC criteria in the output. So: you will have your results in ~2/3 of the time, but downstream filtering of the outfile (e.g., by coverage of an open reading frame) won't be possible.
 
 Additionally, coordinates for a deletion of interest can be specified, in which case the 'deletion status' has two additional possibilities: 'target_deletion' or 'target_deletion_plus'. The outfile can then be easily filtered to find the 'target_deletion'.
 
