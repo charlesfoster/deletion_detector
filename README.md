@@ -122,11 +122,11 @@ The latter stats only make sense if the coordinates are for an open reading fram
 I wrote this program with SARS-CoV-2 in mind since I was interested in querying consensus genomes to find the prevalence of deletions of interest in global data sets. Because of the SARS-CoV-2 focus, I've provided an optional argument to parse GISAID-format sequence headers in input sequences. If this option is used, the output TSV file will have additional columns with useful information extracted for each sample: the date of collection (DOC), country, and a shortened sequence ID. The `--parse_gisaid` option assumes that sequences have been downloaded from GISAID, either from the Search section or a whole-clade download, and that the sequence headers have not been modified since the download. 
 
 ## Citations
-If you use this program and find it useful, I'd appreciate some kind of attribution, e.g.:
+If you use this program and find it useful, I'd appreciate some kind of attribution. For example, I have uploaded the initial release to Zenodo, which can be cited like so:
 
-Foster C.S.P., Deletion Detector, (2022), GitHub repository, https://github.com/charlesfoster/deletion_detector
+Foster, C.S.P. (2022). deletion_detector: a simple and quick way to detect deletions relative to a reference sequence (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.7049120
 
-I might create a zenodo citation and will add it here.
+I will also upload future releases to Zenodo.
 
 Deletion Detector depends on:
 
