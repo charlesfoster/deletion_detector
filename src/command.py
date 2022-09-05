@@ -8,6 +8,7 @@ Created on Wed Aug  4 16:05:42 2021
 
 from Bio import SeqIO
 from Bio.Seq import Seq
+from src import __version__
 import os
 import subprocess
 import argparse
@@ -180,9 +181,11 @@ def main(sysargs = sys.argv[1:]):
     parser.add_argument('-r','--reference', required=False, help="Reference genome in fasta format", default = os.path.join(os.getcwd(),"MN908947.3.fasta"))
     parser.add_argument('-t','--threads', required=False, action="store", default=os.cpu_count(), help='Number of threads to use in parallel processing. Defaults to all available threads.')
     parser.add_argument('-o','--outfile', required=False, action="store", default='deletion_results.tsv', help='Name of the outfile to store results')
+    parser.add_argument("--version",action="version", version=f"v{__version__}")
     args=parser.parse_args()
 
-    printc("\nDeletion Detector\n", 'green')
+    printc("\nDeletion Detector", 'green')
+    printc("Version: {}\n".format(__version__),'blue')
 
     if len(sysargs)<1:
         parser.print_help()
