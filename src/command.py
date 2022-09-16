@@ -3,7 +3,7 @@
 """
 Created on Wed Aug  4 16:05:42 2021
 
-@author: cfos
+@author: https://github.com/charlesfoster
 """
 
 from Bio import SeqIO
@@ -42,16 +42,24 @@ def parse_cigar(cigar,alignment_start,coordinates):
             alignment_start+=x
             continue
         else:
-            if coordinates[0] <= alignment_start <= coordinates[1]:
+            if len(coordinates) > 0:
+                if coordinates[0] <= alignment_start <= coordinates[1]:
+                    d_s = alignment_start+1
+                    d_e = d_s+x-1
+                    d_len = x
+                    deletion = (d_s, d_e, d_len)
+                    deletions.append(deletion)
+                    alignment_start+=x
+                else:
+                    alignment_start+=x
+                    continue
+            else:
                 d_s = alignment_start+1
                 d_e = d_s+x-1
                 d_len = x
                 deletion = (d_s, d_e, d_len)
                 deletions.append(deletion)
                 alignment_start+=x
-            else:
-                alignment_start+=x
-                continue
     return(deletions)
 
 #%%
@@ -63,15 +71,18 @@ def cigar_gaps(record, index, reference, outfile, tempdir, coordinates, deletion
     record.name = fixed_name
     with open(fname+'.fasta', "w") as output_handle:
         SeqIO.write(record, output_handle, "fasta")
-    cmd = '{0} -c -x asm5 --sam-hit-only --secondary=no --end-bonus 500 -t 1 {1} {2} -o {3}'.format('/home/cfos/miniconda3/bin/minimap2', reference, fname+'.fasta',fname+'.paf')
+    cmd = '{0} -c -x asm20 --sam-hit-only --secondary=no --end-bonus 500 -t 1 {1} {2} -o {3}'.format('minimap2', reference, fname+'.fasta',fname+'.paf')
     c = subprocess.check_output(shlex.split(cmd), shell=False,stderr=subprocess.PIPE)
     with open(fname+'.paf','r') as f:
-        paf = f.read().strip().split("\t")
-        wanted = itemgetter(7,22)(paf)
-        cigar = re.sub('^.*:','',wanted[1])
-        alignment_start = int(wanted[0])
-        gaps = parse_cigar(cigar,alignment_start,coordinates)
-
+        lines = [line.rstrip().split("\t") for line in f]
+        gap_list = []
+        for paf in lines:
+            wanted = itemgetter(7,-1)(paf)
+            cigar = re.sub('^.*:','',wanted[1])
+            alignment_start = int(wanted[0])
+            gaps = parse_cigar(cigar,alignment_start,coordinates)
+            gap_list.append(gaps)
+        gaps = [item for sublist in gap_list for item in sublist]
         number_of_gaps = len(gaps)
 
         if number_of_gaps == 0:
@@ -117,7 +128,7 @@ def cigar_gaps(record, index, reference, outfile, tempdir, coordinates, deletion
         with open(outfile, "a") as output_handle:
             output_handle.write(final_result)
         
-        os.system('rm {0} {1}'.format(fname+'.fasta',fname+'.paf'))
+        #os.system('rm {0} {1}'.format(fname+'.fasta',fname+'.paf'))
         return(status_code)
 
 
@@ -130,12 +141,14 @@ def all_gaps(record, index, reference, outfile, tempdir, coordinates, deletion_o
     record.name = fixed_name
     with open(fname+'.fasta', "w") as output_handle:
         SeqIO.write(record, output_handle, "fasta")
-    cmd = '{0} -a -x asm5 --sam-hit-only --secondary=no --end-bonus 500 -t 1 {1} {2} -o {3}'.format('/home/cfos/miniconda3/bin/minimap2', reference, fname+'.fasta',fname+'.sam')
-    c = subprocess.Popen(cmd, shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).communicate()
-    cmd = '{0} sam toMultiAlign -s {1} -t 1 --pad --reference {2} > {3}'.format('/home/cfos/miniconda3/envs/pangolin/bin/gofasta',fname+'.sam',reference,fname+'.fasta')
-    c = subprocess.Popen(cmd, shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).communicate()
+    cmd = f'''
+    minimap2 -a -x asm20 --sam-hit-only --secondary=no --end-bonus 500 -t 1 {reference} {fname+'.fasta'} | \
+        gofasta sam toma --pad -t1 > {fname+'.aligned.fasta'}
+    '''
 
-    for new_seq in SeqIO.parse(fname+'.fasta', "fasta"):
+    c = subprocess.Popen(cmd, shell=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).communicate()
+   
+    for new_seq in SeqIO.parse(fname+'.aligned.fasta', "fasta"):
         variant = str(new_seq.seq)
         if len(coordinates) > 0:
             start = coordinates[0]-1
@@ -251,7 +264,7 @@ def all_gaps(record, index, reference, outfile, tempdir, coordinates, deletion_o
         with open(outfile, "a") as output_handle:
             output_handle.write(final_result)
         
-        os.system('rm {0} {1}'.format(fname+'.fasta',fname+'.sam'))
+        os.system('rm {0} {1}'.format(fname+'.fasta',fname+'.aligned.fasta'))
         return(status_code)
 
 #%%
@@ -275,7 +288,7 @@ def main(sysargs = sys.argv[1:]):
     parser=argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, epilog=epilog)
     #Read inputs
     parser.add_argument('fasta', nargs="*", help="Fasta file containing sequences to check")
-    parser.add_argument('-c','--coordinates', required=False, action="store", default=False, help='Survey subset of genome, e.g. an open reading frame. Must be specified in the form of start:end (1-based coordinates; inclusive). If specified, stats will be given for protein truncation etc. Currently assumes standard translation table.')
+    parser.add_argument('-c','--coordinates', required=False, action="store", default=None, help='Survey subset of genome, e.g. an open reading frame. Must be specified in the form of start:end (1-based coordinates; inclusive). If specified, stats will be given for protein truncation etc. Currently assumes standard translation table.')
     parser.add_argument('-d','--deletion_of_interest', required=False, default=None, help="Specify a deletion of interest in the form of 'start:end' (1-based coordinates; inclusive). If specified, outfile can be easily filtered to find 'target_deletion'.")
     parser.add_argument('-f','--force', required=False, action="store_true", default=False, help='Force overwrite outfile')
     parser.add_argument('-p','--parse_gisaid', required=False, action="store_true", default=False, help='If analysing fasta files from GISAID, parse out the date of collection and country')
@@ -327,7 +340,7 @@ Additionally, the following python libraries must be installed:
 
     #parse genome coordinates
     coordinates = []
-    if args.coordinates:
+    if args.coordinates is not None:
         coordinates = args.coordinates
         coordinates = [int(x) for x in coordinates.split(":")]
         if len(coordinates) != 2 or coordinates[0] > coordinates[1]:
@@ -363,6 +376,7 @@ Additionally, the following python libraries must be installed:
     if args.quick:
         header = 'full_seq_name\tgap_stretches\tnumber_of_deletions\tsummary\n'
     else:
+        header = 'full_seq_name\tgap_stretches\tnumber_of_deletions\tsummary'
         if len(coordinates)>0:
             header = header + "\taa_stop_position\tprot_perc\tprot_truncated"
         if args.parse_gisaid:
