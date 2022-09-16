@@ -123,7 +123,7 @@ I wrote this program with SARS-CoV-2 in mind since I was interested in querying 
 ## Citations
 If you use this program and find it useful, I'd appreciate some kind of attribution. For example, I have uploaded the initial release to Zenodo, which can be cited like so:
 
-Foster, C.S.P. (2022). deletion_detector: a simple and quick way to detect deletions relative to a reference sequence (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.7049120
+Foster, C.S.P. (2022). deletion_detector: a simple and quick way to detect deletions relative to a reference sequence (v0.2.1). Zenodo. https://doi.org/10.5281/zenodo.7084762
 
 I will also upload future releases to Zenodo.
 
